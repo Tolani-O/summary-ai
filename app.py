@@ -1,8 +1,7 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import PlainTextResponse, StreamingResponse
 from pydantic import BaseModel
-from helper_functions import parse_sections
-from graph_nodes import build_single_agent_graph, build_multi_agent_graph
+from graph_nodes import build_agent_graph
 import logging
 import os
 
@@ -16,9 +15,11 @@ app = FastAPI()
 # FastAPI endpoint
 class TextRequest(BaseModel):
     input_path: str
-    mode: str
+    mode: str = "single"
     log_output_path: str
     summary_output_path: str
+    recursion_limit: int = 10
+    validation_threshold: float
 
 @app.post("/summarize", response_class=PlainTextResponse)
 async def summarize(request: TextRequest):
@@ -29,54 +30,42 @@ async def summarize(request: TextRequest):
 
     try:
         # Choose the appropriate graph based on the mode
+        app_graph = build_agent_graph()
         if request.mode == "single":
-            app_graph = build_single_agent_graph()
-        else:
-            app_graph = build_multi_agent_graph()
+            request.validation_threshold = 0  # Disable validation for single-agent mode
 
         async def event_stream():
             # Ensure output paths' directories exist
             os.makedirs(os.path.dirname(request.log_output_path), exist_ok=True)
             os.makedirs(os.path.dirname(request.summary_output_path), exist_ok=True)
             final_state = None
-            num_completed = 0
             # Open the output file in write mode
             with open(request.log_output_path, "w") as output_file:
-                print(f"Starting {request.mode}-agent summarization")
-                yield f"Starting {request.mode}-agent summarization\n"
+                print(f"Starting {request.mode}-agent summarization\n")
+                yield f"Starting {request.mode}-agent summarization\n\n"
                 output_file.write(f"Starting {request.mode}-agent summarization\n\n")
                 output_file.flush()
-                print(f"Parsing {request.input_path}...")
-                yield f"Parsing {request.input_path}...\n"
+                print(f"Parsing {request.input_path}...\n")
+                yield f"Parsing {request.input_path}...\n\n"
                 output_file.write(f"Parsing {request.input_path}...\n\n")
-                output_file.flush()
-                text_sections = parse_sections(request.input_path)
-                num_sections = len(text_sections)
-                print(f"Number of sections: {num_sections}\n")
-                yield f"Number of sections: {num_sections}\n\n"
-                output_file.write(f"Number of sections: {num_sections}\n\n")
                 output_file.flush()
 
                 try:
                     # Stream the graph execution and capture the final state
-                    async for step in app_graph.astream(
-                            {"contents": list(text_sections.values())},
-                            {"recursion_limit": 10}, stream_mode="updates"
-                    ):
+                    async for step in app_graph.astream({
+                        "input_path": request.input_path,
+                        "validation_threshold": request.validation_threshold
+                    },
+                    {
+                        "recursion_limit": request.recursion_limit
+                    },  stream_mode="updates"):
                         # Stream the output to the client
                         output_line = f"Step output:\n{str(step)}"  # Ensure it's a string
-                        print(output_line)
-                        yield f"{output_line}\n"
-                        output_file.write(f"{output_line}\n")  # Write to the output file
+                        print(f"{output_line}\n")
+                        yield f"Step: {list(step.keys())[0]}\n\n"
+                        output_file.write(f"{output_line}\n\n")  # Write to the output file
                         output_file.flush()
-
-                        final_state = step  # Capture the latest state update
-                        num_completed += 1
-                        completion_line = f"Completed {num_completed} tasks out of {num_sections}\n"
-                        print(completion_line)
-                        yield f"{completion_line}\n"
-                        output_file.write(f"{completion_line}\n")  # Write to the output file
-                        output_file.flush()
+                        final_state = list(step.values())[0]  # Capture the latest state update
                 except RecursionError as e:
                     # If recursion limit is hit, proceed with the state computed so far
                     print(f"Recursion limit exceeded: {str(e)}. Proceeding with the current state.")
@@ -94,8 +83,7 @@ async def summarize(request: TextRequest):
                     return
 
                 # Process the final state to get the summary
-                tag = "generate_final_summary" if request.mode == "single" else "validate_summary"
-                summary = final_state.get(tag, {}).get("final_summary")
+                summary = final_state.get("final_summary")
                 if summary is None:
                     error_message = "Error: Final summary not found in the final state. Please try again."
                     print(error_message)
@@ -104,7 +92,7 @@ async def summarize(request: TextRequest):
                     output_file.flush()
                     return
 
-            summary_message = f"Summary completed. Output:\n{str(summary)}\n"  # Ensure it's a string
+            summary_message = f"Summary completed. Output:\n\n{str(summary)}\n"  # Ensure it's a string
             print(summary_message)
             yield f"{summary_message}\n"
             with open(request.summary_output_path, "w") as output_file:

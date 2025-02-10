@@ -21,7 +21,10 @@ The **Summary AI** is a FastAPI-based web application designed to provide intell
 - **LangChain**: A framework that simplifies the integration of language models into applications, enabling complex agentic workflows. The summary AI workflow is depicted in the image below.
 - **Docker**: Containerization technology that allows the application to run consistently across different environments.
 
-![Lang Graph](graph_image.png)
+![Lang Graph](graph_image2.png)
+
+The tool start by parsing the input text and breaking it into smaller, semantically meaningful snippets. Each summary snippet is then passed (in parallel) to a summary agent, which generates snippet summaries. The summaries are then iteratively collapsed, using the summary agent, until resulting global summary is short enough to be processed as a whole. The summary agent then process the collapsed snippet into a cohesive whole.
+If the multi-agent summary is enabled, a second agent, whose sole purpose is to validate/grade summaries is used to give the summary a grade from 0% to 100%. If the grade is less than a predefined `validation_threshold`, a third agent is used to refine the summary. The refined summary is then validated again, and the process continues until the summary is of acceptable quality, or the predefined `recursion_limit` is reached.
 
 ## Prerequisites
 
@@ -84,7 +87,10 @@ Note that the included `test.sh` script assumes the file `sample_text/understand
    mode="single"
    log_output_path="sample_text/log.txt"
    summary_output_path="sample_text/summary.txt"
+   recursion_limit=10
+   validation_threshold=85 # 85% validation threshold. Inactive then mode is single
    agent_url="http://localhost:8000/summarize"
+   
    
    # Test endpoint
    curl -X POST "$agent_url" \
@@ -93,8 +99,21 @@ Note that the included `test.sh` script assumes the file `sample_text/understand
            "input_path": "'"${input_path}"'",
            "mode": "'"${mode}"'",
            "log_output_path": "'"${log_output_path}"'",
-           "summary_output_path": "'"${summary_output_path}"'"
+           "summary_output_path": "'"${summary_output_path}"'",
+           "recursion_limit": "'"${recursion_limit}"'",
+           "validation_threshold": "'"${validation_threshold}"'"
          }'
    ```
-
-Summarization results will be saved to the `summary_output_path` specified in the script, and logs will be saved to the `log_output_path`. The app runs in two modes: `single` and `multi`. The 'multi' mode has an additional validation to test and refine the summary after the summary agent completes. The quality of the summary also largely depends on the abilities of the language model used.
+   The input object to the app has the following structure:
+   ```json
+   {
+     "input_path": <path to input text file>,
+     "mode": <"single" or "multi">,
+     "log_output_path": <" to log file>,
+     "summary_output_path": <path to summary file>,
+     "recursion_limit": <maximum number of recursive calls>
+   }
+   ```
+Summarization results will be saved to the `summary_output_path` specified in the script, and logs will be saved to the `log_output_path`.
+The app runs in two modes: `single` and `multi`. The 'multi' mode has an additional validation to test and refine the summary after the summary agent completes. The quality of the summary also largely depends on the abilities of the language model used.
+The `recursion_limit` parameter specifies the maximum number of cycles to traverse the graph (langGraph) before exiting. This is useful in the verify <--> refine loop prevent an infinite loop.
