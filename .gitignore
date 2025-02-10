@@ -4,3 +4,4 @@
 __pycache__/
 payload.py
 sample_text/
+.gitpod.yml
