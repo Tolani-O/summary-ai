@@ -9,5 +9,5 @@ langchain-ollama
 transformers
 langchain-text-splitters~=0.3.5
 langchain-core~=0.3.33
-pymupdf~=1.25.2
+pymupdf~=1.25.3
 langgraph~=0.2.70

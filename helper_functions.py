@@ -35,7 +35,7 @@ def parse_sections(pdf_path: str, footer_threshold: float = 700, header_threshol
                 cleaned_text = text.replace("\n", " ").strip()
                 full_content[current_section] += f"{cleaned_text}\n"
 
-        if page_num == 51: break  # DELETE THIS LINE
+        # if page_num == 31: break  # Only for debugging
 
     return full_content
 
