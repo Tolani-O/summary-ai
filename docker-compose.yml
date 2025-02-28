@@ -1,0 +1,10 @@
+version: "3.8"
+
+services:
+  summary-ai: 
+    build: .
+    ports:
+      - "8000:8000"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    container_name: summary-ai
